@@ -1,0 +1,42 @@
+
+name: Build Easy Punch APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'apk.zip'
+      - '.github/workflows/main.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract Android project
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip
+          unzip -q apk.zip -d extracted
+
+      - name: Build debug APK
+        run: |
+          GRADLEW=$(find extracted -type f -name gradlew -print -quit)
+          if [ -z "$GRADLEW" ]; then
+            echo "ERROR: Gradle wrapper not found in apk.zip"
+            exit 1
+          fi
+          cd "$(dirname "$GRADLEW")"
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Easy-Punch-APK
+          path: extracted/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          
