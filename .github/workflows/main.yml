@@ -38,7 +38,6 @@ jobs:
 
           if [ ! -f "$ZIP" ]; then
             echo "TimeOrbit source ZIP not found: $ZIP"
-            echo "ZIP files in repository:"
             find . -maxdepth 3 -iname '*.zip' -print
             exit 1
           fi
@@ -57,8 +56,7 @@ jobs:
             -print -quit)
 
           if [ -z "$SETTINGS" ]; then
-            echo "Gradle settings file not found in ZIP."
-            find extracted -maxdepth 5 -type f -print
+            echo "Gradle settings file not found."
             exit 1
           fi
 
@@ -66,13 +64,52 @@ jobs:
 
           if [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ] && \
              [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
-            echo "Android app Gradle file not found in $PROJECT_DIR/app"
-            find extracted -maxdepth 5 -type f -print
+            echo "Android app Gradle file not found."
             exit 1
           fi
 
           echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-          echo "Android project found: $PROJECT_DIR"
+          echo "Project: $PROJECT_DIR"
+
+      - name: Fix missing Android imports
+        env:
+          PROJECT_DIR: ${{ steps.project.outputs.dir }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["PROJECT_DIR"])
+          files = [
+              root / "app/src/main/java/com/easypunch/attendance/BootReceiver.kt",
+              root / "app/src/main/java/com/easypunch/attendance/TimeReminderReceiver.kt",
+          ]
+
+          for path in files:
+              if not path.is_file():
+                  raise SystemExit(f"Required Kotlin file not found: {path}")
+
+              text = path.read_text()
+              import_line = "import android.content.BroadcastReceiver"
+
+              if import_line not in text:
+                  lines = text.splitlines()
+                  package_index = next(
+                      (i for i, line in enumerate(lines)
+                       if line.startswith("package ")),
+                      None
+                  )
+
+                  if package_index is None:
+                      raise SystemExit(f"Package declaration not found: {path}")
+
+                  lines.insert(package_index + 1, "")
+                  lines.insert(package_index + 2, import_line)
+                  path.write_text("\n".join(lines) + "\n")
+
+              print(f"Checked: {path.name}")
+          PY
 
       - name: Build TimeOrbit debug APK
         working-directory: ${{ steps.project.outputs.dir }}
@@ -85,4 +122,3 @@ jobs:
           path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
-          
