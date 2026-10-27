@@ -1,12 +1,10 @@
-
 name: Build Easy Punch APK
 
 on:
   workflow_dispatch:
   push:
-    paths:
-      - 'apk.zip'
-      - '.github/workflows/main.yml'
+    branches:
+      - main
 
 jobs:
   build:
@@ -16,36 +14,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Extract Android project
+      - name: Extract updated source ZIP
         run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip
-          unzip -q apk.zip -d extracted
+          mkdir source
+          unzip -q Easy_Punch_Android_Source_v13_2_Updated.zip -d source
 
-      - name: Build debug APK
+      - name: Build APK
         run: |
-          SETTINGS=$(find extracted -type f -name settings.gradle.kts -print -quit)
-          if [ -z "$SETTINGS" ]; then
-            echo "ERROR: Android project settings.gradle.kts not found"
-            exit 1
-          fi
-          PROJECT_DIR=$(dirname "$SETTINGS")
+          PROJECT_DIR=$(dirname "$(find source -name settings.gradle.kts -o -name settings.gradle | head -n 1)")
           gradle -p "$PROJECT_DIR" assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Easy-Punch-APK
-          path: extracted/**/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+          name: Easy-Punch-APK-v13-2
+          path: source/**/app/build/outputs/apk/debug/*.apk
