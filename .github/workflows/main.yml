@@ -1,5 +1,5 @@
 
-name: Build Easy Punch APK
+name: Build Easy Punch APK v14.0
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build:
-    name: Build Android APK
+    name: Build Easy Punch v14.0 Android APK
     runs-on: ubuntu-latest
 
     steps:
@@ -33,21 +33,27 @@ jobs:
       - name: Install unzip
         run: sudo apt-get update && sudo apt-get install -y unzip
 
-      - name: Extract source ZIP
+      - name: Extract Easy Punch v14.0 source
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p source
-          unzip -o Easy_Punch_Android_Source_v13_2_Updated.zip -d source
+          unzip -o Easy_Punch_v14_0_Fresh_Source_GitHub.zip -d source
 
       - name: Check Android project
         shell: bash
         run: |
+          set -euo pipefail
           test -f source/easy/settings.gradle.kts
+          test -f source/easy/build.gradle.kts
           test -f source/easy/app/build.gradle.kts
-          echo "Android project found: source/easy"
+          test -f source/easy/app/src/main/AndroidManifest.xml
+          echo "Easy Punch v14.0 Android project found"
 
-      - name: Fix duplicate Environment imports
+      - name: Check and fix duplicate Environment imports
         shell: bash
         run: |
+          set -euo pipefail
           FILE="source/easy/app/src/main/java/com/easypunch/attendance/MainActivity.kt"
           test -f "$FILE"
           python3 - "$FILE" <<'PY'
@@ -74,21 +80,31 @@ jobs:
               )
               if package_index < 0:
                   raise SystemExit("Package declaration not found")
+              result.insert(package_index + 1, "")
               result.insert(package_index + 2, target)
 
           p.write_text("\n".join(result) + "\n")
           count = sum(line.strip() == target for line in result)
           print(f"Environment import count: {count}")
+
           if count != 1:
-              raise SystemExit("Environment import fix failed")
+              raise SystemExit("Environment import check failed")
           PY
 
       - name: Build debug APK
-        run: gradle -p source/easy assembleDebug
+        run: gradle -p source/easy assembleDebug --stacktrace
 
-      - name: Upload APK
+      - name: Verify APK exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          find source/easy/app/build/outputs/apk/debug -maxdepth 1 -name "*.apk" -print
+          test -n "$(find source/easy/app/build/outputs/apk/debug -maxdepth 1 -name "*.apk" -print -quit)"
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Easy-Punch-APK-v13-2
+          name: Easy-Punch-APK-v14-0
           path: source/easy/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          retention-days: 14
