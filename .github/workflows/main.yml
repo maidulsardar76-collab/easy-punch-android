@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   build:
+    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
@@ -24,7 +25,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Install Gradle
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
@@ -32,55 +33,62 @@ jobs:
       - name: Install unzip
         run: sudo apt-get update && sudo apt-get install -y unzip
 
-      - name: Extract Android source ZIP
+      - name: Extract source ZIP
         run: |
           mkdir -p source
           unzip -o Easy_Punch_Android_Source_v13_2_Updated.zip -d source
 
-      - name: Find Android project
-        id: project
+      - name: Check Android project
         shell: bash
         run: |
-          FILE="$(find source -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)"
-          if [ -z "$FILE" ]; then
-            echo "Android project settings.gradle file not found in ZIP"
-            exit 1
-          fi
-          echo "dir=$(dirname "$FILE")" >> "$GITHUB_OUTPUT"
-          echo "Project directory: $(dirname "$FILE")"
+          test -f source/easy/settings.gradle.kts
+          test -f source/easy/app/build.gradle.kts
+          echo "Android project found: source/easy"
 
-      - name: Remove duplicate Environment imports
+      - name: Fix duplicate Environment imports
         shell: bash
         run: |
-          FILE="$(find source -type f -name MainActivity.kt -print -quit)"
-          if [ -z "$FILE" ]; then
-            echo "MainActivity.kt not found"
-            exit 1
-          fi
+          FILE="source/easy/app/src/main/java/com/easypunch/attendance/MainActivity.kt"
+          test -f "$FILE"
           python3 - "$FILE" <<'PY'
           import sys
           from pathlib import Path
+
           p = Path(sys.argv[1])
-          lines = p.read_text().splitlines(keepends=True)
+          lines = p.read_text().splitlines()
           target = "import android.os.Environment"
-          seen = False
           result = []
+          seen = False
+
           for line in lines:
               if line.strip() == target:
                   if seen:
                       continue
                   seen = True
               result.append(line)
-          p.write_text("".join(result))
-          print("Environment import count:", sum(x.strip() == target for x in result))
+
+          if not seen:
+              package_index = next(
+                  (i for i, line in enumerate(result)
+                   if line.startswith("package ")), -1
+              )
+              if package_index < 0:
+                  raise SystemExit("Package declaration not found")
+              result.insert(package_index + 2, target)
+
+          p.write_text("\n".join(result) + "\n")
+          count = sum(line.strip() == target for line in result)
+          print(f"Environment import count: {count}")
+          if count != 1:
+              raise SystemExit("Environment import fix failed")
           PY
 
       - name: Build debug APK
-        run: gradle -p "${{ steps.project.outputs.dir }}" assembleDebug
+        run: gradle -p source/easy assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Easy-Punch-APK-v13-2
-          path: source/**/app/build/outputs/apk/debug/*.apk
+          path: source/easy/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
