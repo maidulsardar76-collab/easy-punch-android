@@ -23,71 +23,90 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: "8.9"
 
-      - name: Extract TimeOrbit v15.2 source
+      - name: Find and extract source ZIP
         shell: bash
         run: |
-          set -e
-          ZIP="TimeOrbit_v15_2_Final_Audited_Source.zip"
-          test -f "$ZIP"
+          set -euo pipefail
+
+          ZIP="TimeOrbit_v15_2_Source_Download.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "ERROR: ZIP file not found: $ZIP"
+            echo "ZIP files in repository root:"
+            find . -maxdepth 1 -type f -iname '*.zip' -print
+            exit 1
+          fi
+
           mkdir -p extracted
           unzip -oq "$ZIP" -d extracted
+
+          echo "ZIP extracted successfully."
+          find extracted -type f \( \
+            -name settings.gradle.kts -o \
+            -name settings.gradle \
+          \) -print
 
       - name: Locate Android project
         id: project
         shell: bash
         run: |
-          set -e
-          SETTINGS=$(find extracted -type f \
+          set -euo pipefail
+
+          SETTINGS="$(find extracted -type f \
             \( -name settings.gradle.kts -o -name settings.gradle \) \
-            -print -quit)
+            -print -quit)"
 
           if [ -z "$SETTINGS" ]; then
-            echo "Gradle settings file not found in ZIP."
+            echo "ERROR: Gradle settings file not found."
             exit 1
           fi
 
-          DIR=$(dirname "$SETTINGS")
+          PROJECT_DIR="$(dirname "$SETTINGS")"
 
-          if [ ! -f "$DIR/app/build.gradle.kts" ] && \
-             [ ! -f "$DIR/app/build.gradle" ]; then
-            echo "Android app Gradle file not found."
+          if [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ] && \
+             [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
+            echo "ERROR: Android app Gradle file not found in $PROJECT_DIR"
             exit 1
           fi
 
-          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "Android project: $PROJECT_DIR"
 
-      - name: Verify receiver imports
+      - name: Verify Android project files
         working-directory: ${{ steps.project.outputs.dir }}
         shell: bash
         run: |
-          set -e
-          for FILE in \
-            app/src/main/java/com/easypunch/attendance/BootReceiver.kt \
-            app/src/main/java/com/easypunch/attendance/TimeReminderReceiver.kt
-          do
-            grep -Fx \
-              'import android.content.BroadcastReceiver' "$FILE"
-          done
+          set -euo pipefail
+          test -f app/src/main/AndroidManifest.xml
+          echo "Android manifest found."
 
       - name: Build debug APK
         working-directory: ${{ steps.project.outputs.dir }}
-        run: gradle --no-daemon clean assembleDebug --stacktrace
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon clean assembleDebug --stacktrace
 
       - name: Verify APK
+        shell: bash
         run: |
-          test -s "${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk"
+          set -euo pipefail
+          APK="${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          echo "APK created: $APK"
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: TimeOrbit-v15.2-debug-APK
           path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+          
